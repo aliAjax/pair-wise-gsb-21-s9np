@@ -1,67 +1,18 @@
 import "./styles.css";
-
-const project = {
-  "id": "hxwl-07",
-  "port": 5107,
-  "title": "航空维修检查清单",
-  "subtitle": "按ATA章节推进维修放行前检查",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#1d4ed8",
-    "#475569",
-    "#f97316"
-  ],
-  "domain": "航空维修",
-  "users": [
-    "维修工程师",
-    "放行人员",
-    "培训教员"
-  ],
-  "metrics": [
-    "完成率",
-    "缺陷项",
-    "待复核",
-    "ATA章节"
-  ],
-  "filters": [
-    "机体",
-    "动力装置",
-    "航电",
-    "起落架"
-  ],
-  "fields": [
-    "机型",
-    "ATA章节",
-    "检查区域",
-    "检查项目",
-    "缺陷描述",
-    "处理意见",
-    "签署人"
-  ],
-  "records": [
-    [
-      "A320",
-      "ATA 32",
-      "起落架",
-      "待复核",
-      "主轮磨耗接近限制"
-    ],
-    [
-      "B737",
-      "ATA 24",
-      "电源系统",
-      "正常",
-      "电瓶电压检查完成"
-    ],
-    [
-      "ARJ21",
-      "ATA 27",
-      "飞控",
-      "缺陷",
-      "副翼作动测试需复查"
-    ]
-  ]
-};
+import { seedStore, useMaintenanceStore } from "./data/store";
+import { ATA_CHAPTERS, CATEGORY_POLICIES } from "./data/reference";
+import {
+  healthOf,
+  releaseDecision,
+  type Deferral,
+  type LimitSnapshot,
+  type Rectification,
+  type RectificationInput,
+  type ReleaseEvent,
+} from "./domain/deferral";
+import FleetPanel from "./components/FleetPanel";
+import DeferralForm, { type NewDeferralInput } from "./components/DeferralForm";
+import DeferralBoard from "./components/DeferralBoard";
 
 const statusColors = ["status-ok", "status-watch", "status-danger"];
 
@@ -76,43 +27,239 @@ function MetricCard({ label, value, index }: { label: string; value: string; ind
 }
 
 function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const [store, setStore] = useMaintenanceStore();
+  const now = Date.now();
+
+  // 指标:在册飞机 / 监控中 / 临近到限 / 到限停场
+  let monitoring = 0;
+  let near = 0;
+  let expired = 0;
+  for (const d of store.deferrals) {
+    const ac = store.aircraft.find((a) => a.id === d.aircraftId);
+    if (!ac) continue;
+    const h = healthOf(d, ac, now);
+    if (h === "ok") monitoring += 1;
+    else if (h === "near") near += 1;
+    else if (h === "expired") expired += 1;
+  }
+
+  // 登记保留:已飞数据基准取本机当前累计
+  const addDeferral = (input: NewDeferralInput): string => {
+    const id = `D-${String(store.seq).padStart(4, "0")}`;
+    setStore((s) => {
+      const ac = s.aircraft.find((a) => a.id === input.aircraftId);
+      if (!ac) return s;
+      const at = new Date().toISOString();
+      const d: Deferral = {
+        id,
+        aircraftId: input.aircraftId,
+        ata: input.ata,
+        category: input.category,
+        title: input.title,
+        description: input.description,
+        melRef: input.melRef,
+        deferredAt: at,
+        deferredBy: input.deferredBy,
+        baseHours: ac.hours,
+        baseCycles: ac.cycles,
+        limitDays: input.limitDays,
+        limitHours: input.limitHours,
+        limitCycles: input.limitCycles,
+        status: "open",
+        rectifications: [],
+        limitHistory: [
+          {
+            at,
+            by: input.deferredBy,
+            basis: `初始登记 · ${input.melRef}`,
+            kind: "初始",
+            limitDays: input.limitDays,
+            limitHours: input.limitHours,
+            limitCycles: input.limitCycles,
+          },
+        ],
+        events: [
+          { at, actor: input.deferredBy, action: "保留登记", detail: `ATA ${input.ata} · ${input.category} 类 · ${input.title}` },
+        ],
+        closedAt: null,
+      };
+      return { ...s, seq: s.seq + 1, deferrals: [d, ...s.deferrals] };
+    });
+    return id;
+  };
+
+  // 排故登记:复检通过才关闭,不通过保持打开
+  const rectify = (id: string, r: RectificationInput) => {
+    setStore((s) => ({
+      ...s,
+      deferrals: s.deferrals.map((d) => {
+        if (d.id !== id) return d;
+        const at = new Date().toISOString();
+        const pass = r.result === "pass";
+        const rec: Rectification = { ...r, at };
+        return {
+          ...d,
+          rectifications: [...d.rectifications, rec],
+          status: pass ? "closed" : d.status,
+          closedAt: pass ? at : d.closedAt,
+          events: [
+            ...d.events,
+            {
+              at,
+              actor: r.worker,
+              action: pass ? "排故关闭" : "复检不通过",
+              detail: `件号 ${r.partNumber} · 复检${pass ? "通过" : "不通过"} · ${r.conclusion}`,
+            },
+          ],
+        };
+      }),
+    }));
+  };
+
+  // 延长期限:值班工程师写明依据,旧期限存入沿革
+  const extendLimit = (id: string, limits: LimitSnapshot, engineer: string, basis: string) => {
+    setStore((s) => ({
+      ...s,
+      deferrals: s.deferrals.map((d) => {
+        if (d.id !== id) return d;
+        const at = new Date().toISOString();
+        const parts = [`日历天 ${d.limitDays} → ${limits.limitDays} 天`];
+        if (limits.limitHours != null) parts.push(`飞行小时期限 ${limits.limitHours}`);
+        if (limits.limitCycles != null) parts.push(`循环期限 ${limits.limitCycles}`);
+        return {
+          ...d,
+          ...limits,
+          limitHistory: [...d.limitHistory, { ...limits, at, by: engineer, basis, kind: "延期" as const }],
+          events: [...d.events, { at, actor: engineer, action: "延长期限", detail: `${parts.join(" · ")} · 依据:${basis}` }],
+        };
+      }),
+    }));
+  };
+
+  // 重新打开:期限自本机当前飞行数据重新起算
+  const reopenDeferral = (id: string, actor: string, reason: string) => {
+    setStore((s) => ({
+      ...s,
+      deferrals: s.deferrals.map((d) => {
+        if (d.id !== id) return d;
+        const ac = s.aircraft.find((a) => a.id === d.aircraftId);
+        const at = new Date().toISOString();
+        return {
+          ...d,
+          status: "open" as const,
+          closedAt: null,
+          deferredAt: at,
+          baseHours: ac ? ac.hours : d.baseHours,
+          baseCycles: ac ? ac.cycles : d.baseCycles,
+          limitHistory: [
+            ...d.limitHistory,
+            {
+              limitDays: d.limitDays,
+              limitHours: d.limitHours,
+              limitCycles: d.limitCycles,
+              at,
+              by: actor,
+              basis: reason,
+              kind: "重开" as const,
+            },
+          ],
+          events: [...d.events, { at, actor, action: "重新打开", detail: `重开原因:${reason} · 期限自当前飞行数据重新起算` }],
+        };
+      }),
+    }));
+  };
+
+  // 更新本机飞行小时/循环
+  const updateTotals = (id: string, hours: number, cycles: number) => {
+    setStore((s) => ({
+      ...s,
+      aircraft: s.aircraft.map((a) => (a.id === id ? { ...a, hours, cycles } : a)),
+    }));
+  };
+
+  // 签发放行:判定层复核,任一到限禁止签发
+  const signRelease = (aircraftId: string, by: string) => {
+    setStore((s) => {
+      const ac = s.aircraft.find((a) => a.id === aircraftId);
+      if (!ac) return s;
+      if (!releaseDecision(ac, s.deferrals, Date.now()).canRelease) return s;
+      const ev: ReleaseEvent = {
+        id: `R-${String(s.seq).padStart(4, "0")}`,
+        aircraftId,
+        at: new Date().toISOString(),
+        by,
+        note: "航前放行",
+      };
+      return { ...s, seq: s.seq + 1, releases: [ev, ...s.releases] };
+    });
+  };
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">hxwl-07 · port 5107</p>
+          <h1>航空维修检查清单</h1>
+          <p className="subtitle">
+            保留故障台账:按 ATA 章节登记缺陷类别与期限,自动比对已飞数据,任一期限到限即转停场、禁止签发放行;排故复检通过才关闭,延期与重开全程留痕可查。
+          </p>
         </div>
         <div className="stack-card">
           <span>技术栈</span>
-          <strong>{project.stack}</strong>
+          <strong>React + Vite + TypeScript + CSS</strong>
+          <span>资料 / 判定 / 本机保存 分层维护</span>
+          <button
+            className="reset-btn"
+            onClick={() => {
+              if (window.confirm("确定清空本机数据并恢复示例数据?")) setStore(seedStore());
+            }}
+          >
+            重置示例数据
+          </button>
         </div>
       </section>
 
       <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
-        ))}
+        <MetricCard label="在册飞机" value={String(store.aircraft.length)} index={0} />
+        <MetricCard label="监控中保留" value={String(monitoring)} index={1} />
+        <MetricCard label="临近到限" value={String(near)} index={2} />
+        <MetricCard label="到限停场" value={String(expired)} index={3} />
       </section>
+
+      <FleetPanel
+        aircraft={store.aircraft}
+        deferrals={store.deferrals}
+        releases={store.releases}
+        now={now}
+        onUpdateTotals={updateTotals}
+        onSignRelease={signRelease}
+      />
 
       <section className="workspace">
         <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
+          <h2>保留类别期限(资料)</h2>
+          <div className="policy-list">
+            {CATEGORY_POLICIES.map((p) => (
+              <div className="policy-item" key={p.category}>
+                <strong>
+                  {p.label} · {p.repairDays} 天
+                </strong>
+                <p>{p.rule}</p>
+              </div>
             ))}
           </div>
-          <h2>筛选</h2>
+          <h2>ATA 章节</h2>
           <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
+            {ATA_CHAPTERS.map((c) => (
+              <span key={c.code}>
+                {c.code} {c.name}
+              </span>
+            ))}
+          </div>
+          <h2>角色</h2>
+          <div className="chips">
+            {["维修工程师", "放行人员", "值班工程师"].map((user) => (
+              <span key={user}>{user}</span>
             ))}
           </div>
         </aside>
@@ -120,41 +267,29 @@ function App() {
         <section className="panel">
           <div className="section-heading">
             <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
+              <p>新增保留</p>
+              <h2>保留故障登记</h2>
             </div>
-            <button className="primary-action">新增记录</button>
           </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
+          <DeferralForm aircraft={store.aircraft} onAdd={addDeferral} />
         </section>
       </section>
 
       <section className="records panel">
         <div className="section-heading">
           <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
+            <p>按飞机筛选 · 到限置顶</p>
+            <h2>保留故障台账</h2>
           </div>
-          <button>导出摘要</button>
         </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
+        <DeferralBoard
+          aircraft={store.aircraft}
+          deferrals={store.deferrals}
+          now={now}
+          onRectify={rectify}
+          onExtend={extendLimit}
+          onReopen={reopenDeferral}
+        />
       </section>
     </main>
   );

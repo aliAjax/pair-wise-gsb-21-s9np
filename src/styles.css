@@ -18,7 +18,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -268,6 +269,375 @@ input {
   }
 
   .field-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- 保留故障台账 ---- */
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  background: #ffffff;
+  color: #172033;
+}
+
+.reset-btn {
+  justify-self: start;
+}
+
+.fleet-panel {
+  margin-bottom: 20px;
+}
+
+.fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.fleet-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfdff;
+}
+
+.fleet-card.danger {
+  border-color: #fecdd3;
+  background: #fff7f8;
+}
+
+.fleet-card > header,
+.deferral-card > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fleet-card header strong {
+  font-size: 18px;
+  margin-right: 8px;
+}
+
+.meta {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.totals {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+
+.totals dt {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.totals dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+}
+
+.badge {
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge.ok {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.badge.watch,
+.badge.near {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.badge.danger,
+.badge.expired {
+  background: #ffe4e6;
+  color: #be123c;
+}
+
+.badge.closed {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.badge.cat {
+  background: color-mix(in srgb, var(--primary) 10%, #ffffff);
+  color: var(--primary);
+}
+
+.blocker-list {
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.blocker-list p {
+  margin: 0;
+  color: #be123c;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.next-expiry {
+  margin: 0;
+  font-size: 13px;
+  color: #334155;
+}
+
+.release-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.release-row input {
+  min-height: 38px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.filter-row button {
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 0 14px;
+}
+
+.filter-row button.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.deferral-list {
+  display: grid;
+  gap: 12px;
+}
+
+.deferral-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-left-width: 5px;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfdff;
+}
+
+.deferral-card.health-expired {
+  border-left-color: #e11d48;
+}
+
+.deferral-card.health-near {
+  border-left-color: var(--warn);
+}
+
+.deferral-card.health-ok {
+  border-left-color: var(--primary);
+}
+
+.deferral-card.health-closed {
+  border-left-color: #94a3b8;
+}
+
+.deferral-card h3 {
+  margin: 0;
+}
+
+.deferral-card .desc {
+  margin: 0;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.badges {
+  display: flex;
+  gap: 8px;
+}
+
+.usage-row {
+  margin: 0;
+  font-size: 14px;
+  color: #334155;
+}
+
+.limit-bar {
+  display: grid;
+  gap: 6px;
+}
+
+.limit-bar-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.limit-bar-head .over {
+  color: #be123c;
+}
+
+.limit-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.limit-track i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.limit-bar.near .limit-track i {
+  background: var(--warn);
+}
+
+.limit-bar.expired .limit-track i {
+  background: #e11d48;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.inline-form {
+  display: grid;
+  gap: 12px;
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+}
+
+.form-error {
+  margin: 0;
+  color: #be123c;
+  font-size: 13px;
+}
+
+.form-ok {
+  margin: 0;
+  color: #15803d;
+  font-size: 13px;
+}
+
+.hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.closed-note {
+  background: #f1f5f9;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.fail-note {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #c2410c;
+}
+
+.history-view {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+
+.history-view h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.history-view ul {
+  margin: 0 0 14px;
+  padding-left: 18px;
+}
+
+.history-view li {
+  font-size: 13px;
+  color: #334155;
+  margin-bottom: 8px;
+}
+
+.history-view li p {
+  margin: 2px 0 0;
+  color: #64748b;
+}
+
+.policy-list {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.policy-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.policy-item strong {
+  font-size: 14px;
+}
+
+.policy-item p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.span-2 {
+  grid-column: 1 / -1;
+}
+
+.deferral-form {
+  display: grid;
+  gap: 12px;
+}
+
+@media (max-width: 960px) {
+  .fleet-grid {
     grid-template-columns: 1fr;
   }
 }
